@@ -3,33 +3,70 @@
 namespace App\Http\Controllers;
 
 use App\Models\StockItem;
-use Illuminate\Validation\Rule; 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate; 
+use Illuminate\Validation\Rule;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class StockController extends Controller
 {
     /**
-     * Menampilkan daftar semua item stok.
+     * Menampilkan daftar item stok dengan filter, pencarian, dan metrik.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $stockItems = StockItem::latest()->paginate(10);
-        return view('pages.stock', compact('stockItems'));
+        // --- Kalkulasi untuk Metrics Cards ---
+        $totalItems = StockItem::count();
+        $discrepancies = StockItem::whereRaw('physical_count != system_count')->count();
+        // Hindari pembagian dengan nol jika tidak ada item
+        $accuracyRate = ($totalItems > 0) ? (($totalItems - $discrepancies) / $totalItems) * 100 : 100;
+
+        // --- Query Builder untuk Tabel ---
+        $query = StockItem::query();
+
+        // Filter pencarian cepat berdasarkan nama atau SKU
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+
+        // Filter dropdown Category
+        if ($request->filled('category') && $request->input('category') != 'all') {
+            $query->where('category', $request->input('category'));
+        }
+
+        // Filter dropdown Status (Match/Discrepancy)
+        if ($request->filled('status')) {
+            if ($request->input('status') == 'match') {
+                $query->whereRaw('physical_count = system_count');
+            } elseif ($request->input('status') == 'discrepancy') {
+                $query->whereRaw('physical_count != system_count');
+            }
+        }
+
+        // Ambil data, urutkan dari yang terbaru, paginasi, dan pertahankan filter di URL
+        $stockItems = $query->latest()->paginate(10)->withQueryString();
+
+        return view('pages.stock', compact(
+            'stockItems', 
+            'totalItems', 
+            'discrepancies', 
+            'accuracyRate'
+        ));
     }
 
     /**
-     * Menampilkan form untuk membuat item baru (belum dipakai, tapi harus ada).
+     * Menampilkan form untuk membuat item baru (tidak dipakai, menggunakan modal).
      */
     public function create()
     {
-        // Biasanya mengarah ke view form terpisah, untuk saat ini kita arahkan ke index
         return redirect()->route('stock.index');
     }
 
     /**
-     * Menyimpan item stok baru.
+     * Menyimpan item stok baru dari form modal.
      */
     public function store(Request $request)
     {
@@ -42,41 +79,31 @@ class StockController extends Controller
             'system_count' => 'required|integer|min:0',
         ]);
 
-        StockItem::create([
-            'name' => $request->name,
-            'sku' => $request->sku,
-            'category' => $request->category,
-            'location' => $request->location,
-            'physical_count' => $request->physical_count,
-            'system_count' => $request->system_count,
-            'last_checked_at' => now(),
-        ]);
+        StockItem::create($request->all());
 
         return redirect()->route('stock.index')->with('success', 'Stock item berhasil ditambahkan!');
     }
 
     /**
-     * Menampilkan detail satu item (belum dipakai, tapi harus ada).
+     * Menampilkan halaman detail satu item stok.
      */
-   public function show(StockItem $stock) // Nama parameter '$stock' cocok dengan nama rute
-{
-    // Kita mengirim variabel '$stock' ke view, TAPI kita memberinya NAMA ALIAS 'stockItem'
-    // agar cocok dengan yang diharapkan oleh view.
-    return view('pages.stock.show', ['stockItem' => $stock]); 
-}
-    /**
-     * Menampilkan form untuk mengedit item (belum dipakai, tapi harus ada).
-     */
-   public function edit(StockItem $stock)
+    public function show(StockItem $stock)
     {
-        // Sebelumnya, baris ini salah. Sekarang akan merender view yang benar.
+        return view('pages.stock.show', ['stockItem' => $stock]);
+    }
+
+    /**
+     * Menampilkan halaman form untuk mengedit item stok.
+     */
+    public function edit(StockItem $stock)
+    {
         return view('pages.stock.edit', ['stockItem' => $stock]);
     }
 
     /**
-     * Memperbarui item di database (belum dipakai, tapi harus ada).
+     * Memperbarui item stok di database.
      */
-     public function update(Request $request, StockItem $stock)
+    public function update(Request $request, StockItem $stock)
     {
         $request->validate([
             'name' => 'required|string|max:255',
@@ -93,21 +120,17 @@ class StockController extends Controller
     }
 
     /**
-     * Menghapus item dari database (belum dipakai, tapi harus ada).
+     * Menghapus item stok dari database.
      */
     public function destroy(StockItem $stock)
-{
-    // HAPUS BARIS INI
-    // Gate::authorize('delete-stock-item');
-    
-    $stock->delete();
-    return redirect()->route('stock.index')->with('success', 'Stock item berhasil dihapus!');
-}
+    {
+        $stock->delete();
+        return redirect()->route('stock.index')->with('success', 'Stock item berhasil dihapus!');
+    }
     
     /**
      * Mengekspor data stok sebagai file CSV.
      */
-    
     public function export()
     {
         $fileName = 'stock_opname_' . date('Y-m-d') . '.csv';
@@ -128,16 +151,10 @@ class StockController extends Controller
             fputcsv($file, $columns);
 
             foreach ($stockItems as $item) {
-                $row['Difference'] = $item->physical_count - $item->system_count;
                 fputcsv($file, [
-                    $item->id,
-                    $item->name,
-                    $item->sku,
-                    $item->category,
-                    $item->location,
-                    $item->physical_count,
-                    $item->system_count,
-                    $row['Difference'],
+                    $item->id, $item->name, $item->sku, $item->category, $item->location,
+                    $item->physical_count, $item->system_count,
+                    $item->physical_count - $item->system_count,
                     $item->last_checked_at ? $item->last_checked_at->format('Y-m-d H:i:s') : 'N/A'
                 ]);
             }
@@ -145,17 +162,18 @@ class StockController extends Controller
         };
         return response()->stream($callback, 200, $headers);
     }
-      public function generateQrCode(StockItem $stock)
+    
+    /**
+     * Menghasilkan gambar QR code untuk item stok tertentu.
+     */
+    public function generateQrCode(StockItem $stock)
     {
-        // Data yang ingin kita masukkan ke dalam QR code
-        // Menggunakan format JSON agar mudah dibaca oleh scanner kita
         $dataToEncode = json_encode([
             'sku' => $stock->sku,
             'name' => $stock->name,
             'category' => $stock->category,
         ]);
         
-        // Menghasilkan gambar QR code dalam format SVG dan mengembalikannya sebagai response HTTP
         $qrCode = QrCode::size(250)->format('svg')->generate($dataToEncode);
         
         return response($qrCode)->header('Content-Type', 'image/svg+xml');

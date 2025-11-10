@@ -1,4 +1,4 @@
-// File: resources/views/auth/forgot-password.blade.php
+
 <x-guest-layout>
     <div class="text-center mb-6">
         <h2 class="text-2xl font-semibold text-gray-800 mb-2">Reset Password</h2>

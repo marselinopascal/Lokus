@@ -1,4 +1,3 @@
-// File: resources/views/partials/settings/user-management-table.blade.php
 
 <div class="bg-white rounded-lg shadow-sm p-6">
     <div class="flex items-center justify-between mb-6">

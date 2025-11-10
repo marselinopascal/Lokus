@@ -1,4 +1,4 @@
-// File: resources/views/pages/logbook/show.blade.php
+
 <x-app-layout>
     <div class="p-8">
         @if (session('success'))

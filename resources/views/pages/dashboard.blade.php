@@ -1,4 +1,4 @@
-// File: resources/views/pages/dashboard.blade.php
+
 <x-app-layout>
     <div class="p-8">
         <div class="mb-8">

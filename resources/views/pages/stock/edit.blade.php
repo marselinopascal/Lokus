@@ -1,4 +1,3 @@
-// File: resources/views/pages/stock/edit.blade.php
 
 <x-app-layout>
     <div class="p-8">

@@ -1,4 +1,3 @@
-// File: resources/views/partials/settings/update-profile-form.blade.php
 
 <div class="bg-white rounded-lg shadow-sm">
     <form method="post" action="{{ route('profile.update') }}" class="p-6">

@@ -1,4 +1,4 @@
-{{-- resources/views/auth/login.blade.php --}}
+
 <x-guest-layout>
     <h2 class="text-2xl font-semibold text-gray-800 text-center mb-6">Log In</h2>
 
